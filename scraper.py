@@ -49,25 +49,19 @@ class Scraper:
         
         for file_info in downloaded_files:
             print(f"Processing file: {file_info['fileName']}")
-            updated = await self.process_gzip_file_from_storage(
+            processed_products = await self.process_gzip_file_from_storage(
                 supermarket.get('id'),
                 branch.get('id'),
                 file_info['fileName'],
                 file_info['originalFileName'],
             )
-            print(f"Stored products count: {updated}")
-            total_products_updated += updated
-        
+            print(f"Stored products count: {len(processed_products)}")
+            total_products_updated += len(processed_products)
+
         print(f"Total products updated: {total_products_updated}")
         print("=== Sync completed successfully ===")
         
-        return {
-            'branchId': branch.get('branch_id'),
-            'success': True,
-            'message': f"Successfully processed {len(downloaded_files)} files",
-            'files_processed': len(downloaded_files),
-            'products_updated': total_products_updated,
-        }
+        return processed_products
 
 
     async def perform_login(self, page: Page, username: str, password: str):
@@ -424,7 +418,7 @@ class Scraper:
             print(f"Saved XML file to storage: {xml_file_name}")
 
             # Process XML in chunks
-            total_processed = await self.process_xml_in_chunks(
+            processed_products = await self.process_xml_in_chunks(
                 supermarket_id,
                 branch_record_id,
                 xml_file_name,
@@ -434,7 +428,7 @@ class Scraper:
             os.remove(xml_file_name)
             print(f"Cleaned up XML file: {xml_file_name}")
 
-            return total_processed
+            return processed_products
 
         except Exception as error:
             print(f"Error processing gz file from storage: {error}")
@@ -450,6 +444,7 @@ class Scraper:
         """Process XML file in chunks"""
         try:
             print(f"Processing XML file in chunks: {xml_file_name}")
+            all_products = []
 
             # Read XML file from storage
             async with aiofiles.open(xml_file_name, 'r', encoding='utf-8') as f:
@@ -503,6 +498,7 @@ class Scraper:
                         product = self.parse_product_from_item_xml(item_xml, root_data)
                         if product:
                             products.append(product)
+                            all_products.append(product)
                     except Exception as error:
                         print(f"Error parsing item: {error}")
 
@@ -520,7 +516,7 @@ class Scraper:
                 await asyncio.sleep(0.1)
 
             print(f"Total products processed: {total_processed}")
-            return total_processed
+            return all_products
 
         except Exception as error:
              print(f"Error processing XML in chunks: {error}")
@@ -674,7 +670,7 @@ class Scraper:
                 
                 # Process branch products
                 result = await self.get_branch_products(page, supermarket, branch)
-                print(f"Processing result: {result}")
+                print(f"Processing result: {len(result)}")
                 
             except Exception as e:
                 print(f"Error in main: {e}")
