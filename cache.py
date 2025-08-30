@@ -1,7 +1,8 @@
 import hashlib
+import json
 import time
 from typing import Any, Dict, Optional
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 import logging
 import pickle
 import sqlite3
@@ -10,7 +11,12 @@ from pathlib import Path
 # MCP imports
 
 # Caching imports
-from diskcache import Cache
+try:
+    from diskcache import Cache
+    HAS_DISKCACHE = True
+except ImportError:
+    Cache = None
+    HAS_DISKCACHE = False
 
 # Our supermarket scraper
 
@@ -18,6 +24,7 @@ from diskcache import Cache
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+@dataclass
 class CacheEntry:
     """Cache entry with metadata"""
     data: Any
@@ -34,9 +41,24 @@ class CacheEntry:
 
 
 class CacheManager:
-    """Multi-tier caching system"""
+    """Multi-tier caching system - Singleton"""
     
-    def __init__(self, config: Dict[str, Any]):
+    _instance = None
+    _initialized = False
+    
+    def __new__(cls, config: Dict[str, Any] = None):
+        if cls._instance is None:
+            cls._instance = super(CacheManager, cls).__new__(cls)
+        return cls._instance
+    
+    def __init__(self, config: Dict[str, Any] = None):
+        # Only initialize once
+        if self._initialized:
+            return
+            
+        if config is None:
+            config = {'type': 'memory', 'default_ttl': 3600}
+            
         self.config = config
         self.cache_type = config.get('type', 'memory')
         self.default_ttl = config.get('default_ttl', 3600)  # 1 hour
@@ -48,6 +70,19 @@ class CacheManager:
             self._init_sqlite_cache()
         else:  # memory
             self._init_memory_cache()
+            
+        self._initialized = True
+    
+    @classmethod
+    def get_instance(cls, config: Dict[str, Any] = None) -> 'CacheManager':
+        """Get the singleton instance"""
+        return cls(config)
+    
+    @classmethod
+    def reset_instance(cls):
+        """Reset the singleton instance (useful for testing)"""
+        cls._instance = None
+        cls._initialized = False
     
     def _init_memory_cache(self):
         """Initialize in-memory cache with LRU eviction"""
@@ -58,6 +93,10 @@ class CacheManager:
     
     def _init_disk_cache(self):
         """Initialize disk-based cache"""
+        if not HAS_DISKCACHE:
+            logger.warning("diskcache not available, falling back to memory cache")
+            self._init_memory_cache()
+            return
         cache_dir = self.config.get('cache_dir', './cache')
         Path(cache_dir).mkdir(exist_ok=True)
         self.cache = Cache(cache_dir, size_limit=self.config.get('size_limit', 1024**3))  # 1GB

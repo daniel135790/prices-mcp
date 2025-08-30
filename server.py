@@ -1,15 +1,32 @@
 # basic import 
 import sys
-print("Starting server script...", file=sys.stderr)
+import logging
 from fastmcp import FastMCP
-print("FastMCP imported", file=sys.stderr)
 from scraper import Scraper
-print("Scraper imported", file=sys.stderr)
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+# Create handler that writes to file
+handler = logging.FileHandler('server.log')
+handler.setLevel(logging.DEBUG)
+
+# Formatter
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+
+# Add handler to logger
+logger.addHandler(handler)
+logger.propagate = False  # prevent duplication
+
+logger.debug("Starting server script...")
+logger.debug("FastMCP imported")
+logger.debug("Scraper imported")
 
 # instantiate an MCP server client
-print("Creating FastMCP instance...", file=sys.stderr)
-mcp = FastMCP("Hello World")
-print("FastMCP instance created", file=sys.stderr)
+logger.debug("Creating FastMCP instance...")
+mcp = FastMCP("Hello World", log_level="DEBUG")
+logger.debug("FastMCP instance created")
 
 # DEFINE TOOLS
 
@@ -20,7 +37,7 @@ print("FastMCP instance created", file=sys.stderr)
     "idempotentHint": True
 }, description="Retrieves a list of products from a specific supermarket branch.")
 async def get_products(supermarket: str, branch: str) -> str:
-    print(supermarket, branch)
+    logger.debug(f"Getting products for {supermarket} branch {branch}")
     scraper = Scraper()
     products = await scraper.scrape(supermarket, branch)
     return products
@@ -41,7 +58,7 @@ async def get_most_expensive_product(supermarket: str, branch: str) -> str:
     if isinstance(products, str):
         products = json.loads(products)
     
-    most_expensive = max(products, key=lambda x: float(x.get('price', 0)))
+    most_expensive = max(products, key=lambda x: float(x.get('item_price', 0)))
     return json.dumps(most_expensive)
 
 @mcp.resource("products://{supermarket}/{branch}/cheapest", 
@@ -123,31 +140,21 @@ async def get_product_stats(supermarket: str, branch: str) -> str:
 
 # Template with multiple parameters and annotations
 @mcp.resource(
-    "repos://{owner}/{repo}/info",
-    annotations={
-        "readOnlyHint": True,
-        "idempotentHint": True
-    }
+    "test://ping"
 )
-async def get_repo_info(owner: str, repo: str) -> dict:
-    """Retrieves information about a GitHub repository."""
-    # In a real implementation, this would call the GitHub API
-    return {
-        "owner": owner,
-        "name": repo,
-        "full_name": f"{owner}/{repo}",
-        "stars": 120,
-        "forks": 48
-    }
+async def ping() -> dict:
+    """Pings the server."""
+    logger.debug("Ping resource called")
+    return {"message": "pong"}
 
 # execute and return the stdio output
 if __name__ == "__main__":
-    print("Entering main block...", file=sys.stderr)
+    logger.debug("Entering main block...")
     try:
-        print("Starting MCP server...", file=sys.stderr)
+        logger.debug("Starting MCP server...")
         mcp.run(transport="stdio")
         # mcp.run(transport="http", host="127.0.0.1", port=8000)
     except Exception as e:
-        print(f'Error occurred while starting the server: {e}', file=sys.stderr)
+        logger.error(f'Error occurred while starting the server: {e}')
         raise
 

@@ -17,17 +17,22 @@ from cache import CacheManager
 
 # Configure logging
 logger = logging.getLogger(__name__)
+logger.handler = logging.FileHandler('server.log')
 
 class Scraper:
     def __init__(self):
-            # Initialize cache
-            self.cache = CacheManager({'type':'memory', 'default_ttl':1000})
+            # Initialize cache with 2 hours default TTL for products
+            self.cache = CacheManager({
+                'type': 'memory', 
+                'default_ttl': 7200,  # 2 hours in seconds
+                'max_size': 1000
+            })
 
             # Cache TTL settings (in seconds)
             self.cache_ttl = {
                 'supermarkets': 86400,      # 24 hours
                 'branches': 86400,          # 24 hours  
-                'products': 1800,           # 30 minutes
+                'products': 7200,           # 2 hours (configurable default)
                 'prices': 300,              # 5 minutes
             }
 
@@ -267,7 +272,7 @@ class Scraper:
                 for file_name in test_file_names:
                     try:
                         print(f"Looking for test file: {file_name}")
-                        file_info = await shufersal_scrape_and_download(
+                        file_info = await self.shufersal_scrape_and_download(
                             page,
                             branch.get('branch_id'),
                             file_name,
@@ -296,14 +301,14 @@ class Scraper:
                         
                         if file_link:
                             print(f"Downloading test file: {file_name}")
-                            buffer = await download_file(file_link)
+                            buffer = await self.download_file(file_link)
                             print(f"Downloaded test file {file_name}, size: {len(buffer)} bytes")
                             
                             storage_file_name = f"{int(time.time() * 1000)}_{file_name}"
-                            await save_file(storage_file_name, buffer)
+                            full_file_name = await self.save_file(storage_file_name, buffer)
                             
                             files.append({
-                                'fileName': storage_file_name,
+                                'fileName': full_file_name,
                                 'originalFileName': file_name,
                                 'buffer': buffer,
                             })
@@ -364,14 +369,14 @@ class Scraper:
                         try:
                             file_name = link['fileName'] or link['href']
                             print(f"Downloading file: {file_name}")
-                            buffer = await download_file(link['href'])
+                            buffer = await self.download_file(link['href'])
                             print(f"Downloaded file {file_name}, size: {len(buffer)} bytes")
                             
                             storage_file_name = f"{int(time.time() * 1000)}_{link['fileName'] or 'download'}"
-                            await save_file(storage_file_name, buffer)
+                            full_file_name = await self.save_file(storage_file_name, buffer)
                             
                             files.append({
-                                'fileName': storage_file_name,
+                                'fileName': full_file_name,
                                 'originalFileName': link['fileName'] or 'download',
                                 'buffer': buffer,
                             })
@@ -645,23 +650,64 @@ class Scraper:
             raise error
 
 
+    def _generate_cache_key(self, supermarket: str, branch: str) -> str:
+        """Generate cache key for supermarket + branch combination"""
+        return f"products:{supermarket}:{branch}"
+    
+    async def _get_cached_products(self, supermarket: str, branch: str):
+        """Get products from cache if available and not expired"""
+        try:
+            cache_key = self._generate_cache_key(supermarket, branch)
+            cached_data = await self.cache.get('products', cache_key)
+            if cached_data:
+                logger.info(f"Cache hit for {supermarket} branch {branch}")
+                return cached_data
+            else:
+                logger.info(f"Cache miss for {supermarket} branch {branch}")
+                return None
+        except Exception as e:
+            logger.error(f"Error getting cached products: {e}")
+            return None
+    
+    async def _cache_products(self, supermarket: str, branch: str, products):
+        """Cache products with configured TTL"""
+        try:
+            cache_key = self._generate_cache_key(supermarket, branch)
+            ttl = self.cache_ttl.get('products', 7200)  # Default 2 hours
+            success = await self.cache.set('products', cache_key, products, ttl=ttl)
+            if success:
+                logger.info(f"Cached {len(products) if isinstance(products, list) else 'products'} for {supermarket} branch {branch} (TTL: {ttl}s)")
+            else:
+                logger.warning(f"Failed to cache products for {supermarket} branch {branch}")
+        except Exception as e:
+            logger.error(f"Error caching products: {e}")
+    
     # Example usage
     async def scrape(self, supermarket: str = "shufersal", branch: str = "3"):
-        """Example usage of the scraping functions"""
+        """Main scraping function with caching support"""
+        # First, try to get products from cache
+        cached_products = await self._get_cached_products(supermarket, branch)
+        if cached_products:
+            print(f"Returning {len(cached_products) if isinstance(cached_products, list) else 'cached'} products from cache")
+            return cached_products
+        
+        # Cache miss - proceed with scraping
+        print(f"Cache miss, proceeding with scraping for {supermarket} branch {branch}")
+        
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=False)
             page = await browser.new_page()
 
             # Example supermarket and branch data
-            supermarket = {
+            supermarket_data = {
                 'id': 1,
                 'test_file_names': [],  # Add test file names if needed
                 'file_name_pattern': r'.*\.gz$'  # Pattern for file filtering
             }
             
-            branch = {
+            branch_data = {
                 'id': 1,
-                'branch_id': 3
+                'branch_id': int(branch)
             }
             
             try:
@@ -672,11 +718,16 @@ class Scraper:
                 # await perform_login(page, "username", "password")
                 
                 # Process branch products
-                result = await self.get_branch_products(page, supermarket, branch)
-                print(f"Processing result: {len(result)}")
+                result = await self.get_branch_products(page, supermarket_data, branch_data)
+                print(f"Scraped {len(result)} products")
+                
+                # Cache the results
+                await self._cache_products(supermarket, branch, result)
+                
                 return result
             except Exception as e:
-                print(f"Error in main: {e}")
+                print(f"Error in scraping: {e}")
+                raise e
             finally:
                 await browser.close()
 
