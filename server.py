@@ -1,7 +1,28 @@
 # basic import 
 import sys
 import logging
-from fastmcp import FastMCP
+import subprocess
+
+# Debug: Check if fastmcp is installed
+try:
+    result = subprocess.run([sys.executable, '-m', 'pip', 'list'], capture_output=True, text=True)
+    print("Installed packages:", result.stdout)
+except Exception as e:
+    print(f"Error checking packages: {e}")
+
+try:
+    from fastmcp import FastMCP
+    print("FastMCP imported successfully")
+except ImportError as e:
+    print(f"Failed to import FastMCP: {e}")
+    # Try alternative import paths
+    try:
+        import fastmcp
+        print("fastmcp module found, checking contents...")
+        print(dir(fastmcp))
+    except ImportError:
+        print("fastmcp module not found at all")
+    raise
 from scraper import Scraper
 
 logger = logging.getLogger(__name__)
@@ -147,13 +168,21 @@ async def ping() -> dict:
     logger.debug("Ping resource called")
     return {"message": "pong"}
 
+# Health check tool for deployment platforms
+@mcp.tool()
+async def health_check() -> str:
+    """Health check endpoint for monitoring"""
+    logger.debug("Health check called")
+    return "OK"
+
 # execute and return the stdio output
 if __name__ == "__main__":
     logger.debug("Entering main block...")
     try:
-        logger.debug("Starting MCP server...")
-        mcp.run(transport="stdio")
-        # mcp.run(transport="http", host="127.0.0.1", port=8000)
+        import os
+        port = int(os.environ.get("PORT", 8000))
+        logger.debug(f"Starting MCP server on port {port}...")
+        mcp.run(transport="http", host="0.0.0.0", port=port)
     except Exception as e:
         logger.error(f'Error occurred while starting the server: {e}')
         raise
