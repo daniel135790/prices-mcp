@@ -43,6 +43,8 @@ class Scraper:
         downloaded_files = await self.download_recent_files(page, supermarket, branch)
         print(f"Downloaded files count: {len(downloaded_files)}")
 
+        branch_products = []
+
         # Process downloaded files
         total_products_updated = 0
         print("Processing downloaded files...")
@@ -57,11 +59,12 @@ class Scraper:
             )
             print(f"Stored products count: {len(processed_products)}")
             total_products_updated += len(processed_products)
+            branch_products.extend(processed_products)
 
         print(f"Total products updated: {total_products_updated}")
         print("=== Sync completed successfully ===")
-        
-        return processed_products
+
+        return branch_products
 
 
     async def perform_login(self, page: Page, username: str, password: str):
@@ -643,7 +646,7 @@ class Scraper:
 
 
     # Example usage
-    async def scrape(self):
+    async def scrape(self, supermarket: str = "shufersal", branch: str = "3"):
         """Example usage of the scraping functions"""
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=False)
@@ -671,7 +674,7 @@ class Scraper:
                 # Process branch products
                 result = await self.get_branch_products(page, supermarket, branch)
                 print(f"Processing result: {len(result)}")
-                
+                return result
             except Exception as e:
                 print(f"Error in main: {e}")
             finally:
