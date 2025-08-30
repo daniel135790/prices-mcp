@@ -1,0 +1,5 @@
+fastmcp
+aiofiles
+aiohttp
+playwright
+diskcache
