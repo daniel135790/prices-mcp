@@ -175,6 +175,39 @@ async def health_check() -> str:
     logger.debug("Health check called")
     return "OK"
 
+# Add resource templates so Claude can discover parameterized resources
+@mcp.resource_templates()
+async def get_resource_templates():
+    """Return available resource templates with parameters"""
+    logger.debug("Resource templates requested")
+    return [
+        {
+            "uriTemplate": "products://{supermarket}/{branch}/products",
+            "name": "products",
+            "description": "Retrieves a list of products from a specific supermarket branch"
+        },
+        {
+            "uriTemplate": "products://{supermarket}/{branch}/cheapest",
+            "name": "cheapest_product", 
+            "description": "Get the cheapest product from a supermarket branch"
+        },
+        {
+            "uriTemplate": "products://{supermarket}/{branch}/most_expensive",
+            "name": "most_expensive_product",
+            "description": "Get the most expensive product from a supermarket branch" 
+        },
+        {
+            "uriTemplate": "products://{supermarket}/{branch}/sorted/{sort_by}/limit/{limit}",
+            "name": "sorted_products",
+            "description": "Get sorted and limited products (sort_by: price_asc, price_desc, name)"
+        },
+        {
+            "uriTemplate": "products://{supermarket}/{branch}/stats", 
+            "name": "price_stats",
+            "description": "Get price statistics for products from a supermarket branch"
+        }
+    ]
+
 # execute and return the stdio output
 if __name__ == "__main__":
     logger.debug("Entering main block...")
