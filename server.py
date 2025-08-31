@@ -175,38 +175,73 @@ async def health_check() -> str:
     logger.debug("Health check called")
     return "OK"
 
-# Add resource templates so Claude can discover parameterized resources
-@mcp.resource_templates()
-async def get_resource_templates():
-    """Return available resource templates with parameters"""
-    logger.debug("Resource templates requested")
-    return [
-        {
-            "uriTemplate": "products://{supermarket}/{branch}/products",
-            "name": "products",
-            "description": "Retrieves a list of products from a specific supermarket branch"
-        },
-        {
-            "uriTemplate": "products://{supermarket}/{branch}/cheapest",
-            "name": "cheapest_product", 
-            "description": "Get the cheapest product from a supermarket branch"
-        },
-        {
-            "uriTemplate": "products://{supermarket}/{branch}/most_expensive",
-            "name": "most_expensive_product",
-            "description": "Get the most expensive product from a supermarket branch" 
-        },
-        {
-            "uriTemplate": "products://{supermarket}/{branch}/sorted/{sort_by}/limit/{limit}",
-            "name": "sorted_products",
-            "description": "Get sorted and limited products (sort_by: price_asc, price_desc, name)"
-        },
-        {
-            "uriTemplate": "products://{supermarket}/{branch}/stats", 
-            "name": "price_stats",
-            "description": "Get price statistics for products from a supermarket branch"
-        }
-    ]
+# Convert resource templates to tools since FastMCP doesn't handle resource templates properly
+@mcp.tool()
+async def get_products(supermarket: str, branch: str) -> str:
+    """Retrieves a list of products from a specific supermarket branch"""
+    logger.debug(f"Getting products for {supermarket} branch {branch}")
+    scraper = Scraper()
+    products = await scraper.scrape(supermarket, branch)
+    return products
+
+@mcp.tool()
+async def get_cheapest_product_tool(supermarket: str, branch: str) -> str:
+    """Get the cheapest product from a supermarket branch"""
+    logger.debug(f"Getting cheapest product for {supermarket} branch {branch}")
+    scraper = Scraper()
+    products = await scraper.scrape(supermarket, branch)
+    if not products:
+        return '{"error": "No products found"}'
+    
+    import json
+    if isinstance(products, str):
+        products = json.loads(products)
+    
+    cheapest = min(products, key=lambda x: float(x.get('price', 0)))
+    return json.dumps(cheapest)
+
+@mcp.tool()
+async def get_most_expensive_product_tool(supermarket: str, branch: str) -> str:
+    """Get the most expensive product from a supermarket branch"""
+    logger.debug(f"Getting most expensive product for {supermarket} branch {branch}")
+    scraper = Scraper()
+    products = await scraper.scrape(supermarket, branch)
+    if not products:
+        return '{"error": "No products found"}'
+    
+    import json
+    if isinstance(products, str):
+        products = json.loads(products)
+    
+    most_expensive = max(products, key=lambda x: float(x.get('item_price', 0)))
+    return json.dumps(most_expensive)
+
+@mcp.tool()
+async def get_product_stats_tool(supermarket: str, branch: str) -> str:
+    """Get price statistics for products from a supermarket branch"""
+    logger.debug(f"Getting product stats for {supermarket} branch {branch}")
+    scraper = Scraper()
+    products = await scraper.scrape(supermarket, branch)
+    if not products:
+        return '{"error": "No products found"}'
+    
+    import json
+    if isinstance(products, str):
+        products = json.loads(products)
+    
+    prices = [float(p.get('price', 0)) for p in products if p.get('price')]
+    if not prices:
+        return '{"error": "No valid prices found"}'
+    
+    stats = {
+        "count": len(products),
+        "price_count": len(prices),
+        "most_expensive": max(prices),
+        "cheapest": min(prices),
+        "average_price": sum(prices) / len(prices),
+        "total_value": sum(prices)
+    }
+    return json.dumps(stats)
 
 # execute and return the stdio output
 if __name__ == "__main__":
